@@ -1,0 +1,124 @@
+<!doctype html>
+<!-- Origen: app/como_estoy_hecho (PLAN-CS2-U, Tarea 66/67). Sin build: React y
+     ReactDOM desde CDN, JS plano (React.createElement, sin JSX/Babel). -->
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>¿Cómo estoy hecho?</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background: #fafafa; color: #111; }
+  .col { display: flex; flex-direction: column; gap: 12px; max-width: 720px; margin: 0 auto; }
+  input, textarea, button { font: inherit; padding: 8px; box-sizing: border-box; width: 100%; }
+  textarea { min-height: 96px; resize: vertical; }
+  button { cursor: pointer; }
+  .respuesta { white-space: pre-wrap; background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 12px; min-height: 2em; }
+  .citas a { display: block; word-break: break-all; }
+  .error { color: #b00020; }
+  @media (max-width: 600px) {
+    body { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script>
+const h = React.createElement;
+const ENDPOINT = "/api/v1/como-estoy-hecho";
+
+// Cita "ruta@sha" -> enlace clicable a GitHub (best-effort; no asume un repo fijo).
+function citasDe(texto) {
+  const re = /([\w./-]+)@([0-9a-fA-F]{6,40})/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(texto)) !== null) out.push({ruta: m[1], sha: m[2], texto: m[0]});
+  return out;
+}
+
+function ComoEstoyHecho() {
+  const [customerId, setCustomerId] = React.useState("");
+  const [pregunta, setPregunta] = React.useState("¿cómo estás hecho?");
+  const [respuesta, setRespuesta] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [cargando, setCargando] = React.useState(false);
+
+  async function preguntar() {
+    setError("");
+    setRespuesta("");
+    setCargando(true);
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-Customer-Id": customerId},
+        body: JSON.stringify({pregunta}),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError("Error " + res.status + ": " + (body.detail || "sin detalle"));
+        return;
+      }
+      // Lectura por trozos (streaming-ready): hoy el motor falso devuelve el
+      // JSON completo de una vez, pero leemos con getReader() para no tener
+      // que reescribir la UI el día que el endpoint empiece a transmitir en
+      // streaming de verdad.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acumulado = "";
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        acumulado += decoder.decode(value, {stream: true});
+      }
+      let texto = acumulado;
+      try {
+        texto = JSON.parse(acumulado).respuesta;
+      } catch (e) {
+        // si no es JSON (backend futuro en streaming de texto plano), se
+        // muestra tal cual lo acumulado.
+      }
+      setRespuesta(texto);
+    } catch (e) {
+      setError("No se pudo contactar con el agente: " + e.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  const citas = citasDe(respuesta);
+
+  return h("div", {className: "col"},
+    h("h1", null, "¿Cómo estoy hecho?"),
+    h("label", null, "X-Customer-Id"),
+    h("input", {
+      value: customerId,
+      onChange: e => setCustomerId(e.target.value),
+      placeholder: "C123",
+    }),
+    h("label", null, "Pregunta"),
+    h("textarea", {
+      value: pregunta,
+      onChange: e => setPregunta(e.target.value),
+    }),
+    h("button", {onClick: preguntar, disabled: cargando || !customerId},
+      cargando ? "Preguntando…" : "Preguntar"),
+    error ? h("div", {className: "error"}, error) : null,
+    respuesta ? h("div", {className: "respuesta"}, respuesta) : null,
+    citas.length ? h("div", {className: "citas"},
+      h("strong", null, "Ficheros citados:"),
+      citas.map((c, i) => h("a", {
+        key: i,
+        href: "https://github.com/search?q=" + encodeURIComponent(c.texto),
+        target: "_blank",
+        rel: "noopener noreferrer",
+      }, c.texto))
+    ) : null,
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(ComoEstoyHecho));
+</script>
+</body>
+</html>

@@ -20,14 +20,16 @@ Nota de integración (fuera de mi fence en este worktree, `app/como_estoy_hecho/
    excluir esta ruta de la comprobación genérica.
 """
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.como_estoy_hecho.oferta import HttpOfertaClient, OfertaClient, OfertaError
 from app.como_estoy_hecho.pii import mask_pii
 
 log = logging.getLogger(__name__)
+_STATIC_DIR = Path(__file__).parent / "static"
 router = APIRouter()
 
 
@@ -62,6 +64,16 @@ def _responder_motor_falso(oferta: dict) -> str:
     if not citas:
         return "Estoy hecho de la composición registrada en SYPNOSE, sin ficheros citables ahora mismo."
     return "Estoy hecho de: " + ", ".join(citas) + "."
+
+
+@router.get("/como-estoy-hecho/ui")
+async def como_estoy_hecho_ui():
+    """Interfaz mínima (React desde CDN, sin build) para el endpoint del dominio.
+
+    Sin StaticFiles/app.mount (eso tocaría app/main.py, fuera de mi fence): se
+    sirve el único fichero directamente desde este router.
+    """
+    return FileResponse(_STATIC_DIR / "index.html", media_type="text/html")
 
 
 @router.post("/api/v1/como-estoy-hecho")
