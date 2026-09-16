@@ -1,0 +1,43 @@
+# Origen: plantilla/microservicio/esqueleto/k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: como-estoy-hecho
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: como-estoy-hecho
+  template:
+    metadata:
+      labels:
+        app: como-estoy-hecho
+    spec:
+      containers:
+        - name: como-estoy-hecho
+          image: como-estoy-hecho:latest
+          ports:
+            - containerPort: 8010
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 8010
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 8010
+            initialDelaySeconds: 5
