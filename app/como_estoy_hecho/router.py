@@ -6,30 +6,32 @@ sin LLM real) citando ficheros@sha reales del payload recibido. Regla de identid
 igual que en rag-banking-agent, el cliente no se autodeclara con un dato de negocio;
 aquí se exige la cabecera X-Customer-Id.
 
-Nota de integración (fuera de mi fence en este worktree, `app/como_estoy_hecho/**` y
-`tests/como_estoy_hecho/**` solamente):
-1. `app/main.py` todavía no registra este router (`app.include_router(router)`) --
-   falta esa línea para que el endpoint quede vivo en el servicio real.
-2. `app/security/middleware.py` (CustomerIdMiddleware) devuelve 403 cuando falta
-   X-Customer-Id; el EARS de esta tarea pide 401. Como esa ruta empieza por
-   `/api/v1/como-estoy-hecho` (no `/api/v1/health`), la middleware compartida
-   interceptaría la request ANTES de llegar aquí y respondería 403, no 401. Este
-   router hace su propia comprobación de identidad para cumplir el EARS con
-   independencia de esa middleware; si un día decide seguir aplicando, alguien con
-   permiso en `app/security/` debe alinear el código de estado (403 vs 401) o
-   excluir esta ruta de la comprobación genérica.
+Integración: `app/main.py` (esqueleto-v1.1) autodescubre este router
+(`app.{paquete}.router.router`) y monta `app/como_estoy_hecho/static/` como
+StaticFiles en `/como-estoy-hecho/ui/` -- no hay que registrar nada a mano
+aquí ni definir una ruta propia para servir el HTML (ver `_autodiscover` en
+`app/main.py`).
+
+Nota de integración pendiente (fuera de mi fence en este worktree,
+`app/como_estoy_hecho/**` y `tests/como_estoy_hecho/**` solamente):
+`app/security/middleware.py` (CustomerIdMiddleware) devuelve 403 cuando falta
+X-Customer-Id; el EARS de esta tarea pide 401. Como esta ruta empieza por
+`/api/v1/como-estoy-hecho` (no `/api/v1/health`), la middleware compartida
+interceptaría la request ANTES de llegar aquí y respondería 403, no 401. Este
+router hace su propia comprobación de identidad para cumplir el EARS con
+independencia de esa middleware; si un día decide seguir aplicando, alguien con
+permiso en `app/security/` debe alinear el código de estado (403 vs 401) o
+excluir esta ruta de la comprobación genérica.
 """
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from app.como_estoy_hecho.oferta import HttpOfertaClient, OfertaClient, OfertaError
 from app.como_estoy_hecho.pii import mask_pii
 
 log = logging.getLogger(__name__)
-_STATIC_DIR = Path(__file__).parent / "static"
 router = APIRouter()
 
 
@@ -64,16 +66,6 @@ def _responder_motor_falso(oferta: dict) -> str:
     if not citas:
         return "Estoy hecho de la composición registrada en SYPNOSE, sin ficheros citables ahora mismo."
     return "Estoy hecho de: " + ", ".join(citas) + "."
-
-
-@router.get("/como-estoy-hecho/ui")
-async def como_estoy_hecho_ui():
-    """Interfaz mínima (React desde CDN, sin build) para el endpoint del dominio.
-
-    Sin StaticFiles/app.mount (eso tocaría app/main.py, fuera de mi fence): se
-    sirve el único fichero directamente desde este router.
-    """
-    return FileResponse(_STATIC_DIR / "index.html", media_type="text/html")
 
 
 @router.post("/api/v1/como-estoy-hecho")

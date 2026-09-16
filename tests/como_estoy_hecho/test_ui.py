@@ -1,16 +1,21 @@
 # Origen: PLAN-CS2-U, Tarea 66 (R0) / 67 (R1) — interfaz real del dominio.
-"""R0 (EARS literal del registro): el HTML servido en GET /como-estoy-hecho/ui
-contiene 'react', 'fetch(' y '/api/v1/como-estoy-hecho', y el motor falso
-responde a través de la UI (mismo endpoint que consume el fetch de la página).
+"""R1 (EARS literal del registro): al servirse la interfaz de como-estoy-hecho,
+debe cargar React/ReactDOM desde CDN, mostrar X-Customer-Id + textarea, hacer
+fetch al POST /api/v1/como-estoy-hecho con lectura en streaming, renderizar la
+respuesta y los ficheros citados como enlaces, ser responsive; el test debe
+comprobar 'react', 'fetch(' y '/api/v1/como-estoy-hecho' en el HTML servido, y
+que el motor falso responde a través de la UI.
 
-App de pruebas aislada, igual que test_como_estoy_hecho.py: solo el router de
-este dominio, sin app.main.app (fuera de mi fence en este worktree).
+Tras el merge del esqueleto-v1.1 (auto-discovery), `app/main.py` monta este
+router y sirve `app/como_estoy_hecho/static/` en `/como-estoy-hecho/ui/`
+automáticamente -- se prueba contra la app REAL (`app.main.app`), no una app
+aislada, tal como pide el brief de la Tarea 67.
 """
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.como_estoy_hecho.oferta import OfertaError
-from app.como_estoy_hecho.router import get_oferta_client, router
+from app.como_estoy_hecho.router import get_oferta_client
+from app.main import app
 
 
 class FakeOfertaClient:
@@ -31,16 +36,18 @@ OFERTA_REAL = {
 }
 
 
-def make_app(oferta_client) -> FastAPI:
-    app = FastAPI()
-    app.include_router(router)
+def make_client(oferta_client) -> TestClient:
     app.dependency_overrides[get_oferta_client] = lambda: oferta_client
-    return app
+    return TestClient(app)
 
 
-def test_ui_sirve_html_con_react_fetch_y_endpoint():
-    client = TestClient(make_app(FakeOfertaClient(OFERTA_REAL)))
-    r = client.get("/como-estoy-hecho/ui")
+def teardown_function():
+    app.dependency_overrides.clear()
+
+
+def test_ui_servida_por_app_main_con_react_fetch_y_endpoint():
+    client = make_client(FakeOfertaClient(OFERTA_REAL))
+    r = client.get("/como-estoy-hecho/ui/")
     assert r.status_code == 200
     html = r.text.lower()
     assert "react" in html
@@ -48,16 +55,24 @@ def test_ui_sirve_html_con_react_fetch_y_endpoint():
     assert "/api/v1/como-estoy-hecho" in html
 
 
+def test_ui_bare_path_redirige_o_sirve_la_pagina():
+    client = make_client(FakeOfertaClient(OFERTA_REAL))
+    r = client.get("/como-estoy-hecho/ui")  # sin barra final
+    assert r.status_code == 200
+    assert "react" in r.text.lower()
+
+
 def test_ui_es_responsive():
-    client = TestClient(make_app(FakeOfertaClient(OFERTA_REAL)))
-    html = client.get("/como-estoy-hecho/ui").text.lower()
+    client = make_client(FakeOfertaClient(OFERTA_REAL))
+    html = client.get("/como-estoy-hecho/ui/").text.lower()
     assert "viewport" in html
 
 
-def test_motor_falso_responde_al_endpoint_que_llama_la_ui():
-    """El endpoint que la UI invoca (mismo ENDPOINT del fetch, /api/v1/como-estoy-hecho)
-    responde de verdad con el motor falso -- no es una página estática sin trasfondo."""
-    client = TestClient(make_app(FakeOfertaClient(OFERTA_REAL)))
+def test_motor_falso_responde_a_traves_de_la_ui_por_app_main():
+    """El endpoint que la UI invoca (mismo ENDPOINT del fetch,
+    /api/v1/como-estoy-hecho) responde de verdad con el motor falso, montado
+    por la app real vía auto-discovery -- no una página estática sin trasfondo."""
+    client = make_client(FakeOfertaClient(OFERTA_REAL))
     r = client.post(
         "/api/v1/como-estoy-hecho",
         json={"pregunta": "¿cómo estás hecho?"},
